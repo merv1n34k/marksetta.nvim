@@ -147,7 +147,7 @@ local function diff_maps(old_lines, old_map, new_lines, new_map)
       changes[#changes + 1] = {
         first = old_start - 1, -- texpresso uses 0-based
         old_count = old_end - old_start + 1,
-        new_text = table.concat(chunk_lines, "\n"),
+        new_text = table.concat(chunk_lines, "\n") .. "\n",
       }
     end
   end
@@ -201,10 +201,12 @@ local function rebuild(buf)
         -- Send to texpresso via protocol
         local new_lines = split_lines(content)
         local abs_path = state.tex_path or vim.fn.fnamemodify(path, ":p")
+        -- texpresso expects trailing \n on all content
+        local tp_content = content:sub(-1) == "\n" and content or content .. "\n"
 
         if not state.last_lines then
           -- First compile or no previous state — full open
-          tp.send("open", abs_path, content)
+          tp.send("open", abs_path, tp_content)
         else
           local changes = diff_maps(state.last_lines, state.last_map, new_lines, source_map)
           if changes and #changes > 0 then
@@ -217,7 +219,7 @@ local function rebuild(buf)
             end
           elseif not changes then
             -- Structural change — full reload
-            tp.send("open", abs_path, content)
+            tp.send("open", abs_path, tp_content)
           end
           -- else: no changes, nothing to send
         end
