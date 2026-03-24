@@ -3,9 +3,9 @@
 --
 -- require("marksetta-nvim").setup({...})
 
-local marksetta = require("marksetta")
-
 local M = {}
+
+local marksetta
 
 local defaults = {
   debounce_ms = 50,
@@ -309,6 +309,7 @@ local function stop()
 end
 
 function M.setup(opts)
+  marksetta = require("marksetta")
   opts = opts or {}
   state.opts = deep_merge(defaults, opts)
   state.cfg = marksetta.config.load({ no_file = true })
