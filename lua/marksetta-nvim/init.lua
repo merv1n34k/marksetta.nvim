@@ -187,6 +187,9 @@ local function rebuild(buf)
     local has_tp, tp = tp_available()
     local tp_running = has_tp and tp.is_running()
 
+    -- DEBUG: remove after confirming
+    vim.notify(("[marksetta] rebuild: has_tp=%s tp_running=%s"):format(tostring(has_tp), tostring(tp_running)))
+
     for path, result in pairs(results) do
       local content, source_map
       if type(result) == "table" then
@@ -206,10 +209,12 @@ local function rebuild(buf)
 
         if not state.last_lines then
           -- First compile or no previous state — full open
+          vim.notify(("[marksetta] send open (first): %s (%d bytes)"):format(abs_path, #tp_content))
           tp.send("open", abs_path, tp_content)
         else
           local changes = diff_maps(state.last_lines, state.last_map, new_lines, source_map)
           if changes and #changes > 0 then
+            vim.notify(("[marksetta] send %d change-lines"):format(#changes))
             -- Sort changes in reverse order so line offsets don't shift
             table.sort(changes, function(a, b)
               return a.first > b.first
@@ -219,9 +224,11 @@ local function rebuild(buf)
             end
           elseif not changes then
             -- Structural change — full reload
+            vim.notify(("[marksetta] send open (reload): %s (%d bytes)"):format(abs_path, #tp_content))
             tp.send("open", abs_path, tp_content)
+          else
+            vim.notify("[marksetta] no changes detected")
           end
-          -- else: no changes, nothing to send
         end
 
         state.last_lines = new_lines
