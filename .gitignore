@@ -1,0 +1,10 @@
+# Lua
+luac.out
+
+# Test artifacts
+.testcache/
+luacov.stats.out
+luacov.report.out
+
+# Build
+doc/tags
