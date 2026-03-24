@@ -168,9 +168,14 @@ local function start(buf)
   -- Resolve absolute path
   state.tex_path = vim.fn.fnamemodify(tex_key, ":p")
 
-  -- Create hidden buffer named after the TeX file
-  state.tex_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_name(state.tex_buf, state.tex_path)
+  -- Reuse existing buffer for the TeX file, or create a hidden one
+  local existing = vim.fn.bufnr(state.tex_path)
+  if existing ~= -1 then
+    state.tex_buf = existing
+  else
+    state.tex_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(state.tex_buf, state.tex_path)
+  end
 
   -- Initial compile — writes to disk and populates the buffer
   rebuild(buf)
