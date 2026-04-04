@@ -50,11 +50,25 @@ local function find_tex_output(outputs)
   return nil
 end
 
-local function find_mx_buf()
+--- Convert glob pattern(s) like "*.mx" to Lua patterns like "%.mx$"
+local function glob_to_lua_pattern(pat)
+  local p = pat:gsub("%.", "%%."):gsub("%*", ".*")
+  return p .. "$"
+end
+
+local function find_source_buf()
+  local pats = state.opts and state.opts.pattern or "*.mx"
+  if type(pats) == "string" then
+    pats = { pats }
+  end
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     local name = vim.api.nvim_buf_get_name(buf)
-    if vim.api.nvim_buf_is_loaded(buf) and name:match("%.mx$") then
-      return buf
+    if vim.api.nvim_buf_is_loaded(buf) then
+      for _, pat in ipairs(pats) do
+        if name:match(glob_to_lua_pattern(pat)) then
+          return buf
+        end
+      end
     end
   end
   return nil
@@ -136,9 +150,9 @@ local function rebuild(buf)
 end
 
 local function start(buf)
-  buf = buf or find_mx_buf()
+  buf = buf or find_source_buf()
   if not buf then
-    vim.notify("[marksetta] no .mx buffer found", vim.log.levels.ERROR)
+    vim.notify("[marksetta] no matching buffer found", vim.log.levels.ERROR)
     return
   end
 
@@ -259,7 +273,7 @@ function M.setup(opts)
     pattern = pat,
     callback = function()
       vim.schedule(function()
-        if not find_mx_buf() then
+        if not find_source_buf() then
           stop()
         end
       end)
@@ -284,11 +298,17 @@ function M.setup(opts)
     end
   end, { desc = "Toggle texpresso" })
 
-  -- Rebuild any .mx buffers already open when setup() is called
+  -- Rebuild any matching buffers already open when setup() is called
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    local name = vim.api.nvim_buf_get_name(buf)
-    if vim.api.nvim_buf_is_loaded(buf) and name:match("%.mx$") then
-      rebuild(buf)
+    if vim.api.nvim_buf_is_loaded(buf) then
+      local name = vim.api.nvim_buf_get_name(buf)
+      local pats = type(pat) == "table" and pat or { pat }
+      for _, p in ipairs(pats) do
+        if name:match(glob_to_lua_pattern(p)) then
+          rebuild(buf)
+          break
+        end
+      end
     end
   end
 end
