@@ -26,6 +26,7 @@ local state = {
   tex_dir = nil,
   tex_path = nil,
   augroup = nil,
+  buffers = {},
 }
 
 local function deep_merge(base, override)
@@ -86,6 +87,31 @@ local function tp_available()
   return true, tp
 end
 
+--- Get (or lazily create) a scratch preview buffer for a "buffer" target.
+--- Buffer is listed, non-modifiable, backed by no file; persists across stop().
+local function get_or_create_buffer(name)
+  local buf = state.buffers[name]
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    return buf
+  end
+  buf = vim.api.nvim_create_buf(true, true)
+  vim.api.nvim_buf_set_name(buf, name)
+  vim.api.nvim_set_option_value('modifiable', false, { buf = buf })
+  state.buffers[name] = buf
+  return buf
+end
+
+local function update_buffer(name, content)
+  local buf = get_or_create_buffer(name)
+  local lines = vim.split(content, '\n', { plain = true })
+  if #lines > 0 and lines[#lines] == '' then
+    table.remove(lines)
+  end
+  vim.api.nvim_set_option_value('modifiable', true, { buf = buf })
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_set_option_value('modifiable', false, { buf = buf })
+end
+
 local function compile(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local results = marksetta.compile(lines, {
@@ -114,8 +140,11 @@ local function rebuild(buf)
             tp.push(state.tex_path, content)
           end
         end
+      elseif target == 'buffer' then
+        -- Render into a scratch buffer named after the path key.
+        update_buffer(path, content)
       else
-        -- target == "file": write to disk at the configured path
+        -- target == "file" (default): write to disk at the configured path.
         local f = io.open(path, 'w')
         if f then
           f:write(content)
