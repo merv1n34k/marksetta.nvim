@@ -52,6 +52,29 @@ local function deep_merge(base, override)
   return result
 end
 
+-- Read-through overlay: user keys shadow base keys; nested tables are
+-- overlaid recursively. Uses __index, so it works with marksetta's
+-- frozen-config proxy on LuaJIT (which ignores __pairs and would make
+-- a pairs-based deep_merge silently drop every base field).
+local function overlay(base, user)
+  if not user then
+    return base
+  end
+  return setmetatable({}, {
+    __index = function(_, k)
+      local v = user[k]
+      if v == nil then
+        return base[k]
+      end
+      local b = base[k]
+      if type(v) == 'table' and type(b) == 'table' then
+        return overlay(b, v)
+      end
+      return v
+    end,
+  })
+end
+
 local function find_texpresso_target(outputs)
   local matches = {}
   for path, profile in pairs(outputs) do
@@ -253,11 +276,7 @@ function M.setup(opts)
   -- ~/.config/marksetta/config.json, then layer the inline `cfg`
   -- override from setup() on top so editor-only tweaks win.
   local base = marksetta.config.load({})
-  if state.opts.cfg then
-    state.cfg = deep_merge(base, state.opts.cfg)
-  else
-    state.cfg = base
-  end
+  state.cfg = overlay(base, state.opts.cfg)
   state.timer = vim.uv.new_timer()
 
   -- Normalize texpresso targets: format and output_name are ignored for
