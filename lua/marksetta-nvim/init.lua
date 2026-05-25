@@ -9,12 +9,12 @@ local marksetta
 
 local defaults = {
   debounce_ms = 50,
-  pattern = "*.mx",
+  pattern = '*.mx',
   auto_start = false,
   outputs = {
-    ["_preview"] = { target = "texpresso", include = { "*" } },
-    ["output/out.tex"] = { format = "tex", include = { "*" } },
-    ["output/out.md"] = { format = "md", include = { "*" } },
+    ['_preview'] = { target = 'texpresso', include = { '*' } },
+    ['output/out.tex'] = { format = 'tex', include = { '*' } },
+    ['output/out.md'] = { format = 'md', include = { '*' } },
   },
 }
 
@@ -34,7 +34,7 @@ local function deep_merge(base, override)
     result[k] = v
   end
   for k, v in pairs(override) do
-    if type(v) == "table" and type(result[k]) == "table" then
+    if type(v) == 'table' and type(result[k]) == 'table' then
       result[k] = deep_merge(result[k], v)
     else
       result[k] = v
@@ -46,7 +46,7 @@ end
 local function find_texpresso_target(outputs)
   local matches = {}
   for path, profile in pairs(outputs) do
-    if profile.target == "texpresso" then
+    if profile.target == 'texpresso' then
       table.insert(matches, path)
     end
   end
@@ -56,13 +56,13 @@ end
 
 --- Convert glob pattern(s) like "*.mx" to Lua patterns like "%.mx$"
 local function glob_to_lua_pattern(pat)
-  local p = pat:gsub("%.", "%%."):gsub("%*", ".*")
-  return p .. "$"
+  local p = pat:gsub('%.', '%%.'):gsub('%*', '.*')
+  return p .. '$'
 end
 
 local function find_source_buf()
-  local pats = state.opts and state.opts.pattern or "*.mx"
-  if type(pats) == "string" then
+  local pats = state.opts and state.opts.pattern or '*.mx'
+  if type(pats) == 'string' then
     pats = { pats }
   end
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -79,7 +79,7 @@ local function find_source_buf()
 end
 
 local function tp_available()
-  local ok, tp = pcall(require, "texpresso")
+  local ok, tp = pcall(require, 'texpresso')
   if not ok then
     return false, nil
   end
@@ -101,11 +101,11 @@ local function rebuild(buf)
     local results = compile(buf)
 
     for path, result in pairs(results) do
-      local content = type(result) == "table" and result.output or result
+      local content = type(result) == 'table' and result.output or result
       local profile = state.opts.outputs[path]
-      local target = (profile and profile.target) or "file"
+      local target = (profile and profile.target) or 'file'
 
-      if target == "texpresso" then
+      if target == 'texpresso' then
         -- Push only the elected texpresso target; extras are ignored
         -- (warned at setup time).
         if path == state.tex_key and state.tex_path then
@@ -116,7 +116,7 @@ local function rebuild(buf)
         end
       else
         -- target == "file": write to disk at the configured path
-        local f = io.open(path, "w")
+        local f = io.open(path, 'w')
         if f then
           f:write(content)
           f:close()
@@ -125,65 +125,65 @@ local function rebuild(buf)
     end
   end)
   if not ok then
-    vim.notify("[marksetta] " .. tostring(err), vim.log.levels.ERROR)
+    vim.notify('[marksetta] ' .. tostring(err), vim.log.levels.ERROR)
   end
 end
 
 local function start(buf)
   buf = buf or find_source_buf()
   if not buf then
-    vim.notify("[marksetta] no matching buffer found", vim.log.levels.ERROR)
+    vim.notify('[marksetta] no matching buffer found', vim.log.levels.ERROR)
     return
   end
 
   if not state.tex_key then
-    vim.notify("[marksetta] no texpresso target configured", vim.log.levels.WARN)
+    vim.notify('[marksetta] no texpresso target configured', vim.log.levels.WARN)
     return
   end
 
   local has_tp, tp = tp_available()
   if not has_tp then
     vim.notify(
-      "[marksetta] texpresso.vim not available; texpresso target ignored",
+      '[marksetta] texpresso.vim not available; texpresso target ignored',
       vim.log.levels.WARN
     )
     return
   end
 
   if tp.is_running() then
-    vim.notify("[marksetta] texpresso already running", vim.log.levels.WARN)
+    vim.notify('[marksetta] texpresso already running', vim.log.levels.WARN)
     return
   end
 
   -- Preview file + TeX intermediates live in <src_dir>/.marksetta/.
   -- The output_name in the user's texpresso target is ignored.
   local src = vim.api.nvim_buf_get_name(buf)
-  local src_dir = vim.fn.fnamemodify(src, ":p:h")
-  state.tex_dir = src_dir .. "/.marksetta"
-  vim.fn.mkdir(state.tex_dir, "p")
-  state.tex_path = state.tex_dir .. "/_preview.tex"
+  local src_dir = vim.fn.fnamemodify(src, ':p:h')
+  state.tex_dir = src_dir .. '/.marksetta'
+  vim.fn.mkdir(state.tex_dir, 'p')
+  state.tex_path = state.tex_dir .. '/_preview.tex'
 
   -- -I <src_dir> lets the TeX engine resolve relative includes
   -- (images, .bib, .sty) directly from the source directory.
   tp.stream_mode = true
-  tp.launch({ state.tex_path, "-I", src_dir })
+  tp.launch({ state.tex_path, '-I', src_dir })
   rebuild(buf)
 
-  vim.notify("[marksetta] texpresso started: " .. state.tex_path)
+  vim.notify('[marksetta] texpresso started: ' .. state.tex_path)
 end
 
 local function stop()
   local has_tp, tp = tp_available()
   if has_tp and tp.is_running() then
     tp.stop()
-    vim.notify("[marksetta] texpresso stopped")
+    vim.notify('[marksetta] texpresso stopped')
   end
   state.tex_path = nil
   state.tex_dir = nil
 end
 
 function M.setup(opts)
-  marksetta = require("marksetta")
+  marksetta = require('marksetta')
   opts = opts or {}
   state.opts = deep_merge(defaults, opts)
   state.cfg = marksetta.config.load({ no_file = true })
@@ -193,8 +193,8 @@ function M.setup(opts)
   -- the user, but marksetta.compile still needs `format = "tex"` to know
   -- how to render the chunk.
   for _, profile in pairs(state.opts.outputs) do
-    if profile.target == "texpresso" then
-      profile.format = "tex"
+    if profile.target == 'texpresso' then
+      profile.format = 'tex'
     end
   end
 
@@ -204,7 +204,7 @@ function M.setup(opts)
   if tex_count and tex_count > 1 then
     vim.notify(
       string.format(
-        "[marksetta] %d texpresso targets configured; using %s (others ignored)",
+        '[marksetta] %d texpresso targets configured; using %s (others ignored)',
         tex_count,
         state.tex_key
       ),
@@ -214,20 +214,20 @@ function M.setup(opts)
 
   -- Ensure parent directories exist for file-target outputs.
   for path, profile in pairs(state.opts.outputs) do
-    if (profile.target or "file") == "file" then
-      local dir = path:match("(.+)/")
+    if (profile.target or 'file') == 'file' then
+      local dir = path:match('(.+)/')
       if dir then
-        vim.fn.mkdir(dir, "p")
+        vim.fn.mkdir(dir, 'p')
       end
     end
   end
 
   local pat = state.opts.pattern
 
-  state.augroup = vim.api.nvim_create_augroup("marksetta-nvim", { clear = true })
+  state.augroup = vim.api.nvim_create_augroup('marksetta-nvim', { clear = true })
 
   -- Initial build when file is opened
-  vim.api.nvim_create_autocmd("BufReadPost", {
+  vim.api.nvim_create_autocmd('BufReadPost', {
     group = state.augroup,
     pattern = pat,
     callback = function(ev)
@@ -242,7 +242,7 @@ function M.setup(opts)
   })
 
   -- Debounced rebuild on edits
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+  vim.api.nvim_create_autocmd({ 'TextChanged', 'TextChangedI' }, {
     group = state.augroup,
     pattern = pat,
     callback = function(ev)
@@ -258,7 +258,7 @@ function M.setup(opts)
   })
 
   -- Stop texpresso when last .mx buffer is closed
-  vim.api.nvim_create_autocmd("BufDelete", {
+  vim.api.nvim_create_autocmd('BufDelete', {
     group = state.augroup,
     pattern = pat,
     callback = function()
@@ -271,28 +271,28 @@ function M.setup(opts)
   })
 
   -- User commands
-  vim.api.nvim_create_user_command("MarksettaStart", function()
+  vim.api.nvim_create_user_command('MarksettaStart', function()
     start()
-  end, { desc = "Start texpresso for .mx output" })
+  end, { desc = 'Start texpresso for .mx output' })
 
-  vim.api.nvim_create_user_command("MarksettaStop", function()
+  vim.api.nvim_create_user_command('MarksettaStop', function()
     stop()
-  end, { desc = "Stop texpresso" })
+  end, { desc = 'Stop texpresso' })
 
-  vim.api.nvim_create_user_command("MarksettaToggle", function()
+  vim.api.nvim_create_user_command('MarksettaToggle', function()
     local has_tp, tp = tp_available()
     if has_tp and tp.is_running() then
       stop()
     else
       start()
     end
-  end, { desc = "Toggle texpresso" })
+  end, { desc = 'Toggle texpresso' })
 
   -- Rebuild any matching buffers already open when setup() is called
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(buf) then
       local name = vim.api.nvim_buf_get_name(buf)
-      local pats = type(pat) == "table" and pat or { pat }
+      local pats = type(pat) == 'table' and pat or { pat }
       for _, p in ipairs(pats) do
         if name:match(glob_to_lua_pattern(p)) then
           rebuild(buf)
