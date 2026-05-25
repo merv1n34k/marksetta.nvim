@@ -14,6 +14,11 @@ local defaults = {
   -- TeX distribution texpresso should use for standard package lookup
   -- ("tectonic" | "texlive" | nil to auto-detect).
   engine = nil,
+  -- Inline marksetta config override (merged on top of file-discovered
+  -- config). Use this to set per-format options like packages, document
+  -- class, or a full preamble override:
+  --   cfg = { tex = { packages = { 'tikz', 'amsmath' } } }
+  cfg = nil,
   outputs = {
     ['preview'] = { target = 'texpresso', include = { '*' } },
     ['output/out.tex'] = { format = 'tex', include = { '*' } },
@@ -244,7 +249,15 @@ function M.setup(opts)
   marksetta = require('marksetta')
   opts = opts or {}
   state.opts = deep_merge(defaults, opts)
-  state.cfg = marksetta.config.load({ no_file = true })
+  -- Load defaults + auto-discovered .marksetta.json (cwd) or
+  -- ~/.config/marksetta/config.json, then layer the inline `cfg`
+  -- override from setup() on top so editor-only tweaks win.
+  local base = marksetta.config.load({})
+  if state.opts.cfg then
+    state.cfg = deep_merge(base, state.opts.cfg)
+  else
+    state.cfg = base
+  end
   state.timer = vim.uv.new_timer()
 
   -- Normalize texpresso targets: format and output_name are ignored for
