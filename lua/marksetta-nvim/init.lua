@@ -235,6 +235,13 @@ local function start(buf)
   vim.fn.mkdir(state.tex_dir, 'p')
   state.tex_path = state.tex_dir .. '/preview.tex'
 
+  -- Backward synctex (PDF click) would drop the user into the
+  -- synthesized .marksetta/preview.tex — useless for a marksetta
+  -- workflow whose source is the .mx file. Disable it.
+  if tp.synctex_backward_enabled ~= nil then
+    tp.synctex_backward_enabled = false
+  end
+
   -- -I <src_dir> lets the TeX engine resolve relative includes
   -- (images, .bib, .sty) directly from the source directory.
   -- -tectonic/-texlive tells texpresso where to find standard packages.
