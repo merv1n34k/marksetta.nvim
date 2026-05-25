@@ -12,6 +12,7 @@ local defaults = {
   pattern = "*.mx",
   auto_start = false,
   outputs = {
+    ["_preview"] = { target = "texpresso", include = { "*" } },
     ["output/out.tex"] = { format = "tex", include = { "*" } },
     ["output/out.md"] = { format = "md", include = { "*" } },
   },
@@ -21,8 +22,9 @@ local state = {
   cfg = nil,
   opts = nil,
   timer = nil,
+  tex_key = nil,
+  tex_dir = nil,
   tex_path = nil,
-  tex_buf = nil,
   augroup = nil,
 }
 
@@ -41,13 +43,15 @@ local function deep_merge(base, override)
   return result
 end
 
-local function find_tex_output(outputs)
+local function find_texpresso_target(outputs)
+  local matches = {}
   for path, profile in pairs(outputs) do
-    if profile.format == "tex" then
-      return path
+    if profile.target == "texpresso" then
+      table.insert(matches, path)
     end
   end
-  return nil
+  table.sort(matches)
+  return matches[1], #matches
 end
 
 --- Convert glob pattern(s) like "*.mx" to Lua patterns like "%.mx$"
@@ -74,35 +78,12 @@ local function find_source_buf()
   return nil
 end
 
-local function split_lines(text)
-  if not text or text == "" then
-    return {}
-  end
-  local lines = {}
-  for line in (text .. "\n"):gmatch("(.-)\n") do
-    lines[#lines + 1] = line
-  end
-  if text:sub(-1) ~= "\n" and #lines > 0 and lines[#lines] == "" then
-    lines[#lines] = nil
-  end
-  return lines
-end
-
 local function tp_available()
   local ok, tp = pcall(require, "texpresso")
   if not ok then
     return false, nil
   end
   return true, tp
-end
-
---- Get or create the hidden TeX buffer for texpresso sync
-local function get_tex_buf()
-  if state.tex_buf and vim.api.nvim_buf_is_valid(state.tex_buf) then
-    return state.tex_buf
-  end
-  state.tex_buf = nil
-  return nil
 end
 
 local function compile(buf)
@@ -118,29 +99,28 @@ end
 local function rebuild(buf)
   local ok, err = pcall(function()
     local results = compile(buf)
-    local tex_key = find_tex_output(state.opts.outputs)
-    local tex_buf = get_tex_buf()
 
     for path, result in pairs(results) do
-      local content
-      if type(result) == "table" then
-        content = result.output
+      local content = type(result) == "table" and result.output or result
+      local profile = state.opts.outputs[path]
+      local target = (profile and profile.target) or "file"
+
+      if target == "texpresso" then
+        -- Push only the elected texpresso target; extras are ignored
+        -- (warned at setup time).
+        if path == state.tex_key and state.tex_path then
+          local has_tp, tp = tp_available()
+          if has_tp and tp.is_running() then
+            tp.push(state.tex_path, content)
+          end
+        end
       else
-        content = result
-      end
-
-      if path == tex_key and tex_buf then
-        -- Update the hidden TeX buffer — texpresso.nvim's on_lines hook
-        -- automatically sends change-lines to the texpresso process
-        local new_lines = split_lines(content)
-        vim.api.nvim_buf_set_lines(tex_buf, 0, -1, false, new_lines)
-      end
-
-      -- Always write to disk
-      local f = io.open(path, "w")
-      if f then
-        f:write(content)
-        f:close()
+        -- target == "file": write to disk at the configured path
+        local f = io.open(path, "w")
+        if f then
+          f:write(content)
+          f:close()
+        end
       end
     end
   end)
@@ -156,15 +136,17 @@ local function start(buf)
     return
   end
 
-  local tex_key = find_tex_output(state.opts.outputs)
-  if not tex_key then
-    vim.notify("[marksetta] no tex output configured", vim.log.levels.ERROR)
+  if not state.tex_key then
+    vim.notify("[marksetta] no texpresso target configured", vim.log.levels.WARN)
     return
   end
 
   local has_tp, tp = tp_available()
   if not has_tp then
-    vim.notify("[marksetta] texpresso.vim not available", vim.log.levels.ERROR)
+    vim.notify(
+      "[marksetta] texpresso.vim not available; texpresso target ignored",
+      vim.log.levels.WARN
+    )
     return
   end
 
@@ -173,32 +155,19 @@ local function start(buf)
     return
   end
 
-  -- Ensure output directory exists
-  local dir = tex_key:match("(.+)/")
-  if dir then
-    vim.fn.mkdir(dir, "p")
-  end
+  -- Preview file + TeX intermediates live in <src_dir>/.marksetta/.
+  -- The output_name in the user's texpresso target is ignored.
+  local src = vim.api.nvim_buf_get_name(buf)
+  local src_dir = vim.fn.fnamemodify(src, ":p:h")
+  state.tex_dir = src_dir .. "/.marksetta"
+  vim.fn.mkdir(state.tex_dir, "p")
+  state.tex_path = state.tex_dir .. "/_preview.tex"
 
-  -- Resolve absolute path
-  state.tex_path = vim.fn.fnamemodify(tex_key, ":p")
-
-  -- Reuse existing buffer for the TeX file, or create a hidden one
-  local existing = vim.fn.bufnr(state.tex_path)
-  if existing ~= -1 then
-    state.tex_buf = existing
-  else
-    state.tex_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(state.tex_buf, state.tex_path)
-  end
-
-  -- Initial compile — writes to disk and populates the buffer
+  -- -I <src_dir> lets the TeX engine resolve relative includes
+  -- (images, .bib, .sty) directly from the source directory.
+  tp.stream_mode = true
+  tp.launch({ state.tex_path, "-I", src_dir })
   rebuild(buf)
-
-  -- Launch texpresso
-  tp.launch({ state.tex_path })
-
-  -- Attach the TeX buffer so texpresso.nvim syncs it via on_lines
-  tp.attach(state.tex_buf)
 
   vim.notify("[marksetta] texpresso started: " .. state.tex_path)
 end
@@ -209,12 +178,8 @@ local function stop()
     tp.stop()
     vim.notify("[marksetta] texpresso stopped")
   end
-
-  if state.tex_buf and vim.api.nvim_buf_is_valid(state.tex_buf) then
-    vim.api.nvim_buf_delete(state.tex_buf, { force = true })
-  end
-  state.tex_buf = nil
   state.tex_path = nil
+  state.tex_dir = nil
 end
 
 function M.setup(opts)
@@ -224,11 +189,36 @@ function M.setup(opts)
   state.cfg = marksetta.config.load({ no_file = true })
   state.timer = vim.uv.new_timer()
 
-  -- Ensure parent directories exist for all output paths
-  for path, _ in pairs(state.opts.outputs) do
-    local dir = path:match("(.+)/")
-    if dir then
-      vim.fn.mkdir(dir, "p")
+  -- Normalize texpresso targets: format and output_name are ignored for
+  -- the user, but marksetta.compile still needs `format = "tex"` to know
+  -- how to render the chunk.
+  for _, profile in pairs(state.opts.outputs) do
+    if profile.target == "texpresso" then
+      profile.format = "tex"
+    end
+  end
+
+  -- Elect a single texpresso target; warn if multiple are configured.
+  local tex_count
+  state.tex_key, tex_count = find_texpresso_target(state.opts.outputs)
+  if tex_count and tex_count > 1 then
+    vim.notify(
+      string.format(
+        "[marksetta] %d texpresso targets configured; using %s (others ignored)",
+        tex_count,
+        state.tex_key
+      ),
+      vim.log.levels.WARN
+    )
+  end
+
+  -- Ensure parent directories exist for file-target outputs.
+  for path, profile in pairs(state.opts.outputs) do
+    if (profile.target or "file") == "file" then
+      local dir = path:match("(.+)/")
+      if dir then
+        vim.fn.mkdir(dir, "p")
+      end
     end
   end
 
