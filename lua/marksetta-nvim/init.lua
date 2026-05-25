@@ -15,7 +15,7 @@ local defaults = {
   -- ("tectonic" | "texlive" | nil to auto-detect).
   engine = nil,
   outputs = {
-    ['_preview'] = { target = 'texpresso', include = { '*' } },
+    ['preview'] = { target = 'texpresso', include = { '*' } },
     ['output/out.tex'] = { format = 'tex', include = { '*' } },
     ['output/out.md'] = { format = 'md', include = { '*' } },
   },
@@ -205,7 +205,7 @@ local function start(buf)
   local src_dir = vim.fn.fnamemodify(src, ':p:h')
   state.tex_dir = src_dir .. '/.marksetta'
   vim.fn.mkdir(state.tex_dir, 'p')
-  state.tex_path = state.tex_dir .. '/_preview.tex'
+  state.tex_path = state.tex_dir .. '/preview.tex'
 
   -- -I <src_dir> lets the TeX engine resolve relative includes
   -- (images, .bib, .sty) directly from the source directory.
