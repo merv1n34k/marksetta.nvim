@@ -11,6 +11,9 @@ local defaults = {
   debounce_ms = 50,
   pattern = '*.mx',
   auto_start = false,
+  -- TeX distribution texpresso should use for standard package lookup
+  -- ("tectonic" | "texlive" | nil to auto-detect).
+  engine = nil,
   outputs = {
     ['_preview'] = { target = 'texpresso', include = { '*' } },
     ['output/out.tex'] = { format = 'tex', include = { '*' } },
@@ -85,6 +88,18 @@ local function tp_available()
     return false, nil
   end
   return true, tp
+end
+
+--- Detect a usable TeX distribution. Prefer tectonic (self-contained,
+--- modern). Fall back to texlive via kpsewhich. Returns nil if neither.
+local function detect_engine()
+  if vim.fn.executable('tectonic') == 1 then
+    return 'tectonic'
+  end
+  if vim.fn.executable('kpsewhich') == 1 then
+    return 'texlive'
+  end
+  return nil
 end
 
 --- Get (or lazily create) a scratch preview buffer for a "buffer" target.
@@ -194,8 +209,22 @@ local function start(buf)
 
   -- -I <src_dir> lets the TeX engine resolve relative includes
   -- (images, .bib, .sty) directly from the source directory.
+  -- -tectonic/-texlive tells texpresso where to find standard packages.
+  local engine = state.opts.engine or detect_engine()
+  local launch_args = { state.tex_path, '-I', src_dir }
+  if engine == 'tectonic' then
+    table.insert(launch_args, '-tectonic')
+  elseif engine == 'texlive' then
+    table.insert(launch_args, '-texlive')
+  else
+    vim.notify(
+      '[marksetta] no TeX engine detected (install tectonic or texlive); '
+        .. 'texpresso will not find standard packages',
+      vim.log.levels.WARN
+    )
+  end
   tp.stream_mode = true
-  tp.launch({ state.tex_path, '-I', src_dir })
+  tp.launch(launch_args)
   rebuild(buf)
 
   vim.notify('[marksetta] texpresso started: ' .. state.tex_path)
