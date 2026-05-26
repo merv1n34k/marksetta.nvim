@@ -14,6 +14,14 @@ local defaults = {
   -- TeX distribution texpresso should use for standard package lookup
   -- ("tectonic" | "texlive" | nil to auto-detect).
   engine = nil,
+  -- Before launching texpresso, run a synchronous tectonic compile of
+  -- the synthesized preview.tex to populate .aux on disk. This is the
+  -- only way to get \tableofcontents / cross-references in the live
+  -- preview, since texpresso never persists engine-written files (its
+  -- in-memory aux is rolled back on every replay).
+  -- Set to false to skip the launch-time pre-compile (faster startup,
+  -- empty TOC).
+  seed_aux = true,
   -- Inline marksetta config override (merged on top of file-discovered
   -- config). Use this to set per-format options like packages, document
   -- class, or a full preamble override:
@@ -242,10 +250,53 @@ local function start(buf)
     tp.synctex_backward_enabled = false
   end
 
+  local engine = state.opts.engine or detect_engine()
+
+  -- Seed .aux on disk so texpresso's first run can render \tableofcontents
+  -- and resolve cross-references. Texpresso never persists engine-written
+  -- files, so without this the live TOC is always empty. Only tectonic is
+  -- supported for the seed (it auto-reruns until .aux stabilizes); texlive
+  -- users get a notice and a stale-TOC preview.
+  if state.opts.seed_aux and engine == 'tectonic' then
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local results = marksetta.compile(lines, {
+      cfg = state.cfg,
+      outputs = state.opts.outputs,
+    })
+    local r = results[state.tex_key]
+    local seed_content = type(r) == 'table' and r.output or r
+    if seed_content then
+      local fh = io.open(state.tex_path, 'w')
+      if fh then
+        fh:write(seed_content)
+        fh:close()
+        vim.notify('[marksetta] seeding .aux with tectonic...')
+        local out = vim.fn.system({
+          'tectonic',
+          '--keep-intermediates',
+          '--outdir',
+          state.tex_dir,
+          state.tex_path,
+        })
+        if vim.v.shell_error ~= 0 then
+          vim.notify(
+            '[marksetta] tectonic seed failed (TOC may be empty): ' .. out,
+            vim.log.levels.WARN
+          )
+        end
+      end
+    end
+  elseif state.opts.seed_aux and engine ~= 'tectonic' then
+    vim.notify(
+      '[marksetta] seed_aux requires tectonic; skipping. TOC and cross-refs '
+        .. 'will be empty in the preview.',
+      vim.log.levels.WARN
+    )
+  end
+
   -- -I <src_dir> lets the TeX engine resolve relative includes
   -- (images, .bib, .sty) directly from the source directory.
   -- -tectonic/-texlive tells texpresso where to find standard packages.
-  local engine = state.opts.engine or detect_engine()
   local launch_args = { state.tex_path, '-I', src_dir }
   if engine == 'tectonic' then
     table.insert(launch_args, '-tectonic')
