@@ -31,7 +31,6 @@ local state = {
   opts = nil,
   timer = nil,
   tex_key = nil,
-  tex_dir = nil,
   tex_path = nil,
   augroup = nil,
   buffers = {},
@@ -227,26 +226,26 @@ local function start(buf)
     return
   end
 
-  -- Preview file + TeX intermediates live in <src_dir>/.marksetta/.
-  -- The output_name in the user's texpresso target is ignored.
+  -- Synthesized TeX is a virtual path next to the .mx source. Texpresso
+  -- never writes to disk anyway, so we don't create a subdirectory —
+  -- the path only matters as the doc-dir anchor for the TeX engine's
+  -- relative-include search, which naturally resolves images/.bib/.sty
+  -- next to the .mx. The output_name in the user's texpresso target is
+  -- ignored.
   local src = vim.api.nvim_buf_get_name(buf)
   local src_dir = vim.fn.fnamemodify(src, ':p:h')
-  state.tex_dir = src_dir .. '/.marksetta'
-  vim.fn.mkdir(state.tex_dir, 'p')
-  state.tex_path = state.tex_dir .. '/preview.tex'
+  state.tex_path = src_dir .. '/preview.tex'
 
   -- Backward synctex (PDF click) would drop the user into the
-  -- synthesized .marksetta/preview.tex — useless for a marksetta
-  -- workflow whose source is the .mx file. Disable it.
+  -- synthesized preview.tex — useless for a marksetta workflow whose
+  -- source is the .mx file. Disable it.
   if tp.synctex_backward_enabled ~= nil then
     tp.synctex_backward_enabled = false
   end
 
-  -- -I <src_dir> lets the TeX engine resolve relative includes
-  -- (images, .bib, .sty) directly from the source directory.
   -- -tectonic/-texlive tells texpresso where to find standard packages.
   local engine = state.opts.engine or detect_engine()
-  local launch_args = { state.tex_path, '-I', src_dir }
+  local launch_args = { state.tex_path }
   if engine == 'tectonic' then
     table.insert(launch_args, '-tectonic')
   elseif engine == 'texlive' then
@@ -272,7 +271,6 @@ local function stop()
     vim.notify('[marksetta] texpresso stopped')
   end
   state.tex_path = nil
-  state.tex_dir = nil
 end
 
 function M.setup(opts)
