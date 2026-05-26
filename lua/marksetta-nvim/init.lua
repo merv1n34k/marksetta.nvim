@@ -21,8 +21,6 @@ local defaults = {
   cfg = nil,
   outputs = {
     ['preview'] = { target = 'texpresso', include = { '*' } },
-    ['output/out.tex'] = { format = 'tex', include = { '*' } },
-    ['output/out.md'] = { format = 'md', include = { '*' } },
   },
 }
 
