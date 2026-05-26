@@ -185,6 +185,10 @@ local function rebuild(buf)
       elseif target == 'buffer' then
         -- Render into a scratch buffer named after the path key.
         update_buffer(path, content)
+      elseif target == 'pdf' then
+        -- PDF compile is expensive (tectonic call). Skip in the per-
+        -- keystroke rebuild path; compile_pdf() drives it on BufWritePost
+        -- and :MarksettaPDF.
       else
         -- target == "file" (default): write to disk at the configured path.
         local f = io.open(path, 'w')
@@ -197,6 +201,68 @@ local function rebuild(buf)
   end)
   if not ok then
     vim.notify('[marksetta] ' .. tostring(err), vim.log.levels.ERROR)
+  end
+end
+
+-- Compile every output with `target = 'pdf'` via tectonic.
+-- Synchronous; expected to run on :w (BufWritePost) or :MarksettaPDF, not
+-- on every keystroke.
+local function compile_pdf(buf)
+  buf = buf or find_source_buf()
+  if not buf then
+    vim.notify('[marksetta] no matching buffer found for PDF compile', vim.log.levels.WARN)
+    return
+  end
+
+  local pdf_paths = {}
+  for path, profile in pairs(state.opts.outputs) do
+    if profile.target == 'pdf' then
+      table.insert(pdf_paths, path)
+    end
+  end
+  if #pdf_paths == 0 then
+    return
+  end
+
+  local engine = state.opts.engine or detect_engine()
+  if engine ~= 'tectonic' then
+    vim.notify('[marksetta] PDF target requires tectonic; skipping compile', vim.log.levels.WARN)
+    return
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local results = marksetta.compile(lines, {
+    cfg = state.cfg,
+    outputs = state.opts.outputs,
+  })
+
+  for _, path in ipairs(pdf_paths) do
+    local r = results[path]
+    local content = type(r) == 'table' and r.output or r
+    if content then
+      local abs = vim.fn.fnamemodify(path, ':p')
+      local out_dir = vim.fn.fnamemodify(abs, ':h')
+      local out_base = vim.fn.fnamemodify(abs, ':t:r')
+      vim.fn.mkdir(out_dir, 'p')
+      local tex_path = out_dir .. '/' .. out_base .. '.tex'
+      local fh = io.open(tex_path, 'w')
+      if fh then
+        fh:write(content)
+        fh:close()
+        vim.notify('[marksetta] compiling ' .. path .. '...')
+        local out = vim.fn.system({
+          'tectonic',
+          '--outdir',
+          out_dir,
+          tex_path,
+        })
+        if vim.v.shell_error ~= 0 then
+          vim.notify('[marksetta] tectonic failed: ' .. out, vim.log.levels.ERROR)
+        else
+          vim.notify('[marksetta] PDF compiled: ' .. path)
+        end
+      end
+    end
   end
 end
 
@@ -284,11 +350,11 @@ function M.setup(opts)
   state.cfg = overlay(base, state.opts.cfg)
   state.timer = vim.uv.new_timer()
 
-  -- Normalize texpresso targets: format and output_name are ignored for
-  -- the user, but marksetta.compile still needs `format = "tex"` to know
-  -- how to render the chunk.
+  -- Normalize texpresso and pdf targets: marksetta.compile needs an
+  -- explicit `format = "tex"` to know how to render the chunk, even
+  -- though the user-supplied format is ignored for these targets.
   for _, profile in pairs(state.opts.outputs) do
-    if profile.target == 'texpresso' then
+    if profile.target == 'texpresso' or profile.target == 'pdf' then
       profile.format = 'tex'
     end
   end
@@ -352,6 +418,15 @@ function M.setup(opts)
     end,
   })
 
+  -- Compile PDF outputs on file save
+  vim.api.nvim_create_autocmd('BufWritePost', {
+    group = state.augroup,
+    pattern = pat,
+    callback = function(ev)
+      compile_pdf(ev.buf)
+    end,
+  })
+
   -- Stop texpresso when last .mx buffer is closed
   vim.api.nvim_create_autocmd('BufDelete', {
     group = state.augroup,
@@ -382,6 +457,10 @@ function M.setup(opts)
       start()
     end
   end, { desc = 'Toggle texpresso' })
+
+  vim.api.nvim_create_user_command('MarksettaPDF', function()
+    compile_pdf()
+  end, { desc = 'Compile pdf targets with tectonic' })
 
   -- Rebuild any matching buffers already open when setup() is called
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
