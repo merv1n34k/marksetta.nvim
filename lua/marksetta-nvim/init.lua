@@ -460,6 +460,35 @@ function M.setup(opts)
     compile_pdf()
   end, { desc = 'Compile pdf targets with tectonic' })
 
+  vim.api.nvim_create_user_command('MarksettaTidy', function(opts)
+    local format = opts.fargs[1] or 'md'
+    if format ~= 'md' and format ~= 'tex' then
+      vim.notify('[marksetta] :MarksettaTidy format must be md or tex', vim.log.levels.ERROR)
+      return
+    end
+    local buf = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local results = marksetta.compile(lines, {
+      cfg = state.cfg,
+      outputs = { out = { format = format, include = { '*' } } },
+    })
+    local r = results.out
+    local content = type(r) == 'table' and r.output or r
+    if not content or content == '' then
+      vim.notify('[marksetta] tidy produced no output', vim.log.levels.WARN)
+      return
+    end
+    local out_lines = vim.split(content, '\n', { plain = true })
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, out_lines)
+    vim.notify('[marksetta] tidied to ' .. format)
+  end, {
+    nargs = '?',
+    complete = function()
+      return { 'md', 'tex' }
+    end,
+    desc = 'Convert current .mx buffer to md (default) or tex in place',
+  })
+
   -- Rebuild any matching buffers already open when setup() is called
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(buf) then
