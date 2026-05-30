@@ -322,6 +322,11 @@ local function start(buf)
     )
   end
   tp.stream_mode = true
+  -- Marksetta authors prose, not numbered LaTeX — TOC/refs convergence
+  -- is the expected behavior. Opt in to texpresso's idle reruns.
+  if tp.rerun ~= nil then
+    tp.rerun = true
+  end
   tp.launch(launch_args)
   rebuild(buf)
 
