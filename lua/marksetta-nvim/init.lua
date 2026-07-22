@@ -14,6 +14,9 @@ local defaults = {
   -- TeX distribution texpresso should use for standard package lookup
   -- ("tectonic" | "texlive" | nil to auto-detect).
   engine = nil,
+  -- Enable texpresso idle-convergence reruns at launch. Off by default;
+  -- toggle at runtime with require('texpresso').rerun_toggle().
+  rerun = false,
   -- Inline marksetta config override (merged on top of file-discovered
   -- config). Use this to set per-format options like packages, document
   -- class, or a full preamble override:
@@ -322,10 +325,10 @@ local function start(buf)
     )
   end
   tp.stream_mode = true
-  -- Marksetta authors prose, not numbered LaTeX — TOC/refs convergence
-  -- is the expected behavior. Opt in to texpresso's idle reruns.
+  -- Idle-convergence reruns are opt-in (opts.rerun); off by default so the
+  -- viewer starts clean. Enable at runtime with tp.rerun_toggle().
   if tp.rerun ~= nil then
-    tp.rerun = true
+    tp.rerun = state.opts.rerun or false
   end
   tp.launch(launch_args)
   rebuild(buf)
